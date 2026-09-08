@@ -89,13 +89,16 @@
             );
         };
 
-        // ¡REEMPLAZA ESTAS DOS LÍNEAS CON TUS DATOS DE SUPABASE!
+        // Tus credenciales de Supabase
         const SUPABASE_URL = 'https://wuegeyaxaernahzpmujc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZWdleWF4YWVybmFoenBtdWpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDgyNjIsImV4cCI6MjEwMjM4NDI2Mn0.Od5QcVZZDz3PzUrEbXKhHiWl9OH4qRvLn4vA5YF914c';
         
-        let supabase = null;
+        let supabaseClient = null;
         try {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            // SOLUCIÓN AL ERROR: auth: { persistSession: false } evita que el navegador bloquee Supabase
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                auth: { persistSession: false }
+            });
         } catch (error) {
             console.error("No se pudo inicializar Supabase. Revisa las credenciales.", error);
         }
@@ -122,14 +125,15 @@
             }, [storeState, isAdmin, showAuthModal, toastMessage]);
 
             useEffect(() => {
-                if (!supabase) {
-                    setToastMessage("Faltan credenciales de Supabase en el código");
+                if (!supabaseClient) {
+                    setToastMessage("Faltan credenciales de Supabase en el código o fueron bloqueadas.");
+                    setIsSyncing(false);
                     return;
                 }
 
                 const fetchInitialData = async () => {
                     try {
-                        const { data, error } = await supabase
+                        const { data, error } = await supabaseClient
                             .from('store_state')
                             .select('data')
                             .eq('id', 1)
@@ -153,7 +157,7 @@
                                 },
                                 sales: { small: 0, large: 0 }
                             };
-                            await supabase.from('store_state').insert([{ id: 1, data: defaultState }]);
+                            await supabaseClient.from('store_state').insert([{ id: 1, data: defaultState }]);
                             setStoreState(defaultState);
                         }
                         setIsSyncing(false);
@@ -167,7 +171,7 @@
                 fetchInitialData();
 
                 // Suscripción en tiempo real
-                const subscription = supabase
+                const subscription = supabaseClient
                     .channel('public:store_state')
                     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_state', filter: 'id=eq.1' }, payload => {
                         setStoreState(payload.new.data);
@@ -175,7 +179,7 @@
                     .subscribe();
 
                 return () => {
-                    supabase.removeChannel(subscription);
+                    supabaseClient.removeChannel(subscription);
                 };
             }, []);
 
@@ -185,9 +189,9 @@
             };
 
             const saveToCloud = async (newState) => {
-                if (!supabase) return;
+                if (!supabaseClient) return;
                 try {
-                    await supabase
+                    await supabaseClient
                         .from('store_state')
                         .update({ data: newState })
                         .eq('id', 1);
@@ -273,7 +277,6 @@
                     <div className="min-h-screen flex flex-col items-center justify-center bg-purple-50">
                         <div className="w-16 h-16 border-4 border-purple-400 border-t-purple-600 rounded-full animate-spin mb-4"></div>
                         <h2 className="text-xl font-bold text-purple-800">Conectando a la nube...</h2>
-                        <p className="text-gray-500 mt-2 text-sm max-w-xs text-center">Si esto demora mucho, asegúrate de haber colocado tus credenciales de Supabase en el código.</p>
                     </div>
                 );
             }
