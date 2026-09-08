@@ -117,7 +117,6 @@
 
             useEffect(() => {
                 if (!supabase) {
-                    // Fallback con estado local si falla la red para evitar pantalla de carga infinita
                     setStoreState({
                         inventory: {
                             oreo: { small: 9, large: 2 },
@@ -132,42 +131,43 @@
                             chocolate: { small: 0, large: 0 }
                         }
                     });
-                    setToastMessage("Trabajando en modo local (Sin conexión a Supabase)");
+                    setToastMessage("Modo local (Sin Supabase)");
                     setIsSyncing(false);
                     return;
                 }
 
-                const fetchInitialData = async () => {
+                const initCloudData = async () => {
                     try {
+                        const defaultState = {
+                            inventory: {
+                                oreo: { small: 9, large: 2 },
+                                menta: { small: 12, large: 0 },
+                                vainilla: { small: 0, large: 1 },
+                                chocolate: { small: 0, large: 0 }
+                            },
+                            flavorSales: {
+                                oreo: { small: 0, large: 0 },
+                                menta: { small: 0, large: 0 },
+                                vainilla: { small: 0, large: 0 },
+                                chocolate: { small: 0, large: 0 }
+                            }
+                        };
+
                         const { data, error } = await supabase
                             .from('store_state')
                             .select('data')
                             .eq('id', 1)
-                            .single();
-                        
+                            .maybeSingle();
+
                         if (data && data.data) {
                             setStoreState(data.data);
                         } else {
-                            const defaultState = {
-                                inventory: {
-                                    oreo: { small: 9, large: 2 },
-                                    menta: { small: 12, large: 0 },
-                                    vainilla: { small: 0, large: 1 },
-                                    chocolate: { small: 0, large: 0 }
-                                },
-                                flavorSales: {
-                                    oreo: { small: 0, large: 0 },
-                                    menta: { small: 0, large: 0 },
-                                    vainilla: { small: 0, large: 0 },
-                                    chocolate: { small: 0, large: 0 }
-                                }
-                            };
                             await supabase.from('store_state').upsert([{ id: 1, data: defaultState }]);
                             setStoreState(defaultState);
                         }
                         setIsSyncing(false);
                     } catch (e) {
-                        console.error("Error conectando:", e);
+                        console.error("Error sincronizando:", e);
                         setStoreState({
                             inventory: {
                                 oreo: { small: 9, large: 2 },
@@ -186,7 +186,7 @@
                     }
                 };
 
-                fetchInitialData();
+                initCloudData();
 
                 const subscription = supabase
                     .channel('public:store_state')
@@ -207,14 +207,18 @@
                 setTimeout(() => setToastMessage(null), 3000);
             };
 
-            const saveToCloud = async (newState) => {
-                if (!supabase) return;
+            const handleManualSave = async () => {
+                if (!supabase || !storeState) return;
                 try {
-                    await supabase
+                    const { error } = await supabase
                         .from('store_state')
-                        .upsert({ id: 1, data: newState });
+                        .upsert({ id: 1, data: storeState });
+                    
+                    if (error) throw error;
+                    showToast("¡Datos guardados y actualizados en Supabase!");
                 } catch (e) {
-                    console.error("Error guardando datos", e);
+                    console.error("Error al guardar:", e);
+                    showToast("Error al guardar en Supabase", true);
                 }
             };
 
@@ -250,7 +254,6 @@
                 };
 
                 setStoreState(newState);
-                saveToCloud(newState);
                 showToast(`Vendido: 1 ${FLAVOR_CONFIG[flavorKey].name} (${size === 'small' ? 'Pequeño' : 'Grande'})`);
             };
 
@@ -289,8 +292,7 @@
                 };
                 
                 setStoreState(newState);
-                saveToCloud(newState);
-                showToast(`Inventario actualizado (${delta > 0 ? '+' : ''}${delta})`);
+                showToast(`Inventario ajustado (${delta > 0 ? '+' : ''}${delta})`);
             };
 
             const handleLogin = (e) => {
@@ -343,7 +345,7 @@
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-purple-50">
                         <div className="w-16 h-16 border-4 border-purple-400 border-t-purple-600 rounded-full animate-spin mb-4"></div>
-                        <h2 className="text-xl font-bold text-purple-800">Conectando a base de datos...</h2>
+                        <h2 className="text-xl font-bold text-purple-800">Cargando base de datos...</h2>
                     </div>
                 );
             }
@@ -374,6 +376,20 @@
                         
                         {isAdmin && (
                             <div className="space-y-6 mb-8">
+                                <div className="flex justify-between items-center bg-purple-50 p-4 rounded-2xl border border-purple-200 shadow-sm">
+                                    <div>
+                                        <h3 className="font-bold text-purple-900 text-lg">Panel de Sincronización</h3>
+                                        <p className="text-xs text-purple-600">Guarda tus ventas y cambios manualmente en Supabase.</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleManualSave}
+                                        className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"
+                                    >
+                                        <i data-feather="cloud" className="w-4 h-4"></i>
+                                        Guardar en la Nube
+                                    </button>
+                                </div>
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-purple-100 flex items-center gap-4">
                                         <div className="bg-green-100 p-3 rounded-xl text-green-600">
@@ -398,7 +414,7 @@
                                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-purple-100">
                                     <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                                         <i data-feather="bar-chart-2" className="text-purple-600"></i>
-                                        Detalle de Ventas e Ingresos por Sabor
+                                        Detalle Detallado de Ventas e Ingresos por Sabor
                                     </h3>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
@@ -425,11 +441,6 @@
                                             </tbody>
                                         </table>
                                     </div>
-                                </div>
-
-                                <div className="bg-purple-100 text-purple-800 px-4 py-3 rounded-lg flex items-center gap-3 border border-purple-200">
-                                    <i data-feather="info" className="w-5 h-5 flex-shrink-0"></i>
-                                    <p className="text-sm font-medium">Modo Administrador activo. Usa <strong>Vender</strong> o ajusta con <span className="font-bold bg-white px-1.5 rounded">+ / -</span> para actualizar inventario y ganancias.</p>
                                 </div>
                             </div>
                         )}
