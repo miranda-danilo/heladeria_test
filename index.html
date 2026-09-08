@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helados Cremosos - Sistema de Inventario</title>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel para compilar JSX en el navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Iconos (Feather Icons vía CDN) -->
+    <script src="https://unpkg.com/feather-icons"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fcf9f2; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+        .flavor-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .flavor-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const FLAVOR_CONFIG = {
+            oreo: { name: 'Oreo', color: '#f3f4f6', shadow: '#e5e7eb', text: 'text-gray-700', details: 'dots' },
+            menta: { name: 'Menta', color: '#bbf7d0', shadow: '#86efac', text: 'text-green-800', details: 'leaf' },
+            vainilla: { name: 'Vainilla', color: '#fef3c7', shadow: '#fde68a', text: 'text-yellow-800', details: 'smooth' },
+            chocolate: { name: 'Chocolate', color: '#8b5cf6', shadow: '#7c3aed', text: 'text-purple-900', details: 'smooth', overrideColor: '#713f12', overrideShadow: '#451a03' }
+        };
+
+        const IceCreamCup = ({ flavorKey }) => {
+            const config = FLAVOR_CONFIG[flavorKey];
+            const mainColor = config.overrideColor || config.color;
+            const shadowColor = config.overrideShadow || config.shadow;
+            
+            return (
+                <svg viewBox="0 0 100 120" className="w-24 h-24 mx-auto mb-4 drop-shadow-lg" xmlns="http://www.w3.org/2000/svg">
+                    {/* Sombra base */}
+                    <ellipse cx="50" cy="110" rx="30" ry="8" fill="rgba(0,0,0,0.1)" />
+                    
+                    {/* Vaso plateado */}
+                    <path d="M 25 50 L 35 110 C 35 115 65 115 65 110 L 75 50 Z" fill="#e5e7eb" />
+                    <path d="M 25 50 L 35 110 C 35 115 65 115 65 110 L 75 50 Z" fill="url(#metallicGradient)" opacity="0.6"/>
+                    <ellipse cx="50" cy="50" rx="25" ry="10" fill="#d1d5db" />
+                    
+                    {/* Helado superior */}
+                    <path d="M 23 45 C 23 25 77 25 77 45 C 77 55 23 55 23 45 Z" fill={mainColor} />
+                    <ellipse cx="50" cy="45" rx="27" ry="12" fill={mainColor} />
+                    <ellipse cx="50" cy="42" rx="24" ry="10" fill={shadowColor} opacity="0.3" />
+                    
+                    {/* Detalles según sabor (ej. chispas de Oreo) */}
+                    {flavorKey === 'oreo' && (
+                        <g fill="#374151">
+                            <circle cx="35" cy="40" r="1.5" />
+                            <circle cx="45" cy="35" r="2" />
+                            <circle cx="60" cy="38" r="1.5" />
+                            <circle cx="50" cy="48" r="2.5" />
+                            <circle cx="30" cy="46" r="1" />
+                            <circle cx="65" cy="45" r="1.8" />
+                        </g>
+                    )}
+
+                    {/* Paleta de madera */}
+                    <path d="M 46 15 L 47 45 L 53 45 L 54 15 C 54 10 46 10 46 15 Z" fill="#d4a373" />
+                    <path d="M 50 15 L 50 45" stroke="#bc6c25" strokeWidth="1" opacity="0.5" />
+                    
+                    <defs>
+                        <linearGradient id="metallicGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.8" />
+                            <stop offset="50%" stopColor="#9ca3af" stopOpacity="0.1" />
+                            <stop offset="100%" stopColor="#4b5563" stopOpacity="0.5" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+            );
+        };
+
+        // ¡REEMPLAZA ESTAS DOS LÍNEAS CON TUS DATOS DE SUPABASE!
+        const SUPABASE_URL = 'https://wuegeyaxaernahzpmujc.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZWdleWF4YWVybmFoenBtdWpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDgyNjIsImV4cCI6MjEwMjM4NDI2Mn0.Od5QcVZZDz3PzUrEbXKhHiWl9OH4qRvLn4vA5YF914c';
+        
+        let supabase = null;
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } catch (error) {
+            console.error("No se pudo inicializar Supabase. Revisa las credenciales.", error);
+        }
+
+        const App = () => {
+            const [storeState, setStoreState] = useState(null);
+            
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [showAuthModal, setShowAuthModal] = useState(false);
+            const [passwordInput, setPasswordInput] = useState('');
+            const [authError, setAuthError] = useState(false);
+            const [toastMessage, setToastMessage] = useState(null);
+            const [isSyncing, setIsSyncing] = useState(true);
+
+            // Precios
+            const PRICE_SMALL = 0.50;
+            const PRICE_LARGE = 0.75;
+
+            // Inicialización de iconos de Feather
+            useEffect(() => {
+                if (window.feather) {
+                    window.feather.replace();
+                }
+            }, [storeState, isAdmin, showAuthModal, toastMessage]);
+
+            useEffect(() => {
+                if (!supabase) {
+                    setToastMessage("Faltan credenciales de Supabase en el código");
+                    return;
+                }
+
+                const fetchInitialData = async () => {
+                    try {
+                        const { data, error } = await supabase
+                            .from('store_state')
+                            .select('data')
+                            .eq('id', 1)
+                            .single();
+                        
+                        if (error && error.code !== 'PGRST116') { 
+                            console.error("Error fetching data:", error);
+                            return;
+                        }
+
+                        if (data) {
+                            setStoreState(data.data);
+                        } else {
+                            // Estado inicial según la pizarra si la base de datos está vacía
+                            const defaultState = {
+                                inventory: {
+                                    oreo: { small: 9, large: 2 },
+                                    menta: { small: 12, large: 0 },
+                                    vainilla: { small: 0, large: 1 },
+                                    chocolate: { small: 0, large: 0 }
+                                },
+                                sales: { small: 0, large: 0 }
+                            };
+                            await supabase.from('store_state').insert([{ id: 1, data: defaultState }]);
+                            setStoreState(defaultState);
+                        }
+                        setIsSyncing(false);
+                    } catch (e) {
+                        console.error("Error conectando a Supabase:", e);
+                        setIsSyncing(false);
+                        setToastMessage("Error de conexión a la base de datos");
+                    }
+                };
+
+                fetchInitialData();
+
+                // Suscripción en tiempo real
+                const subscription = supabase
+                    .channel('public:store_state')
+                    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_state', filter: 'id=eq.1' }, payload => {
+                        setStoreState(payload.new.data);
+                    })
+                    .subscribe();
+
+                return () => {
+                    supabase.removeChannel(subscription);
+                };
+            }, []);
+
+            const showToast = (message, isError = false) => {
+                setToastMessage({ text: message, isError });
+                setTimeout(() => setToastMessage(null), 3000);
+            };
+
+            const saveToCloud = async (newState) => {
+                if (!supabase) return;
+                try {
+                    await supabase
+                        .from('store_state')
+                        .update({ data: newState })
+                        .eq('id', 1);
+                } catch (e) {
+                    console.error("Error guardando datos", e);
+                    showToast("Error de conexión a la nube", true);
+                }
+            };
+
+            const handleSell = (flavorKey, size) => {
+                if (!storeState || storeState.inventory[flavorKey][size] <= 0) {
+                    showToast("No hay stock suficiente", true);
+                    return;
+                }
+
+                const newState = {
+                    ...storeState,
+                    inventory: {
+                        ...storeState.inventory,
+                        [flavorKey]: {
+                            ...storeState.inventory[flavorKey],
+                            [size]: storeState.inventory[flavorKey][size] - 1
+                        }
+                    },
+                    sales: {
+                        ...storeState.sales,
+                        [size]: (storeState.sales[size] || 0) + 1
+                    }
+                };
+
+                setStoreState(newState); // Actualización optimista local
+                saveToCloud(newState);
+                showToast(`Vendido: 1 ${FLAVOR_CONFIG[flavorKey].name} ${size === 'small' ? 'Pequeño' : 'Grande'}`);
+            };
+
+            const handleAdjustStock = (flavorKey, size, delta) => {
+                if (!storeState) return;
+                
+                const currentAmount = storeState.inventory[flavorKey][size];
+                if (currentAmount + delta < 0) return; // No permitir negativos
+
+                const newState = {
+                    ...storeState,
+                    inventory: {
+                        ...storeState.inventory,
+                        [flavorKey]: {
+                            ...storeState.inventory[flavorKey],
+                            [size]: currentAmount + delta
+                        }
+                    }
+                };
+                
+                setStoreState(newState);
+                saveToCloud(newState);
+            };
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (passwordInput === 'helado2026') {
+                    setIsAdmin(true);
+                    setShowAuthModal(false);
+                    setPasswordInput('');
+                    setAuthError(false);
+                    showToast("Modo administrador activado");
+                } else {
+                    setAuthError(true);
+                }
+            };
+
+            const handleLogout = () => {
+                setIsAdmin(false);
+                showToast("Sesión cerrada");
+            };
+
+            // Cálculo de ganancias
+            const totalEarnings = storeState ? 
+                (storeState.sales.small * PRICE_SMALL) + (storeState.sales.large * PRICE_LARGE) : 0;
+            const totalItemsSold = storeState ? 
+                (storeState.sales.small + storeState.sales.large) : 0;
+
+            if (isSyncing) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-purple-50">
+                        <div className="w-16 h-16 border-4 border-purple-400 border-t-purple-600 rounded-full animate-spin mb-4"></div>
+                        <h2 className="text-xl font-bold text-purple-800">Conectando a la nube...</h2>
+                        <p className="text-gray-500 mt-2 text-sm max-w-xs text-center">Si esto demora mucho, asegúrate de haber colocado tus credenciales de Supabase en el código.</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="pb-20">
+                    {/* Header */}
+                    <header className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 shadow-md sticky top-0 z-10">
+                        <div className="max-w-4xl mx-auto flex justify-between items-center">
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tight" style={{fontFamily: "'Fredoka One', cursive, sans-serif"}}>
+                                    HELADOS CREMOSOS
+                                </h1>
+                                <p className="text-purple-200 text-sm opacity-90 font-medium">Sistema de Inventario en la Nube</p>
+                            </div>
+                            <button 
+                                onClick={() => isAdmin ? handleLogout() : setShowAuthModal(true)}
+                                className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors backdrop-blur-sm"
+                                title={isAdmin ? "Cerrar sesión" : "Administrar"}
+                            >
+                                <i data-feather={isAdmin ? "log-out" : "lock"} className="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="max-w-4xl mx-auto p-4 mt-4">
+                        
+                        {/* Panel de Estadísticas (Solo Admin) */}
+                        {isAdmin && (
+                            <div className="mb-8 grid grid-cols-2 gap-4">
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-purple-100 flex items-center gap-4">
+                                    <div className="bg-green-100 p-3 rounded-xl text-green-600">
+                                        <i data-feather="dollar-sign"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-500 font-medium">Ganancias Totales</p>
+                                        <p className="text-2xl font-bold text-gray-800">${totalEarnings.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-purple-100 flex items-center gap-4">
+                                    <div className="bg-blue-100 p-3 rounded-xl text-blue-600">
+                                        <i data-feather="shopping-cart"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-500 font-medium">Helados Vendidos</p>
+                                        <p className="text-2xl font-bold text-gray-800">{totalItemsSold} unid.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {isAdmin && (
+                            <div className="mb-6 bg-purple-100 text-purple-800 px-4 py-3 rounded-lg flex items-center gap-3 border border-purple-200">
+                                <i data-feather="info" className="w-5 h-5 flex-shrink-0"></i>
+                                <p className="text-sm font-medium">Estás en modo administrador. Usa los botones <span className="font-bold bg-white px-2 rounded mx-1">+</span> y <span className="font-bold bg-white px-2 rounded mx-1">-</span> para corregir o reabastecer el inventario sin que cuente como venta.</p>
+                            </div>
+                        )}
+
+                        {/* Cuadrícula de Sabores */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            {Object.entries(FLAVOR_CONFIG).map(([key, config]) => (
+                                <div key={key} className="glass-panel flavor-card rounded-3xl p-6 border border-gray-100 relative overflow-hidden">
+                                    {/* Decoración de fondo */}
+                                    <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-20" style={{backgroundColor: config.color}}></div>
+                                    
+                                    <IceCreamCup flavorKey={key} />
+                                    
+                                    <h3 className={`text-2xl font-black text-center mb-4 ${config.text}`}>{config.name}</h3>
+                                    
+                                    <div className="space-y-4 relative z-10">
+                                        {/* Fila Pequeños */}
+                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
+                                            <div>
+                                                <span className="font-bold text-gray-700 block">Pequeño</span>
+                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_SMALL.toFixed(2)}</span>
+                                            </div>
+                                            
+                                            {isAdmin ? (
+                                                <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                    <button onClick={() => handleAdjustStock(key, 'small', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
+                                                    <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].small}</span>
+                                                    <button onClick={() => handleAdjustStock(key, 'small', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-center">
+                                                        <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].small}</span>
+                                                        <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleSell(key, 'small')}
+                                                        disabled={storeState.inventory[key].small <= 0}
+                                                        className={`px-4 py-3 rounded-xl font-bold text-white shadow-md transition-all flex items-center gap-2 ${storeState.inventory[key].small > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                    >
+                                                        <i data-feather="shopping-bag" className="w-4 h-4"></i>
+                                                        Vender
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Fila Grandes */}
+                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
+                                            <div>
+                                                <span className="font-bold text-gray-700 block">Grande</span>
+                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_LARGE.toFixed(2)}</span>
+                                            </div>
+                                            
+                                            {isAdmin ? (
+                                                <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                    <button onClick={() => handleAdjustStock(key, 'large', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
+                                                    <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].large}</span>
+                                                    <button onClick={() => handleAdjustStock(key, 'large', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-center">
+                                                        <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].large}</span>
+                                                        <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleSell(key, 'large')}
+                                                        disabled={storeState.inventory[key].large <= 0}
+                                                        className={`px-4 py-3 rounded-xl font-bold text-white shadow-md transition-all flex items-center gap-2 ${storeState.inventory[key].large > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                    >
+                                                        <i data-feather="shopping-bag" className="w-4 h-4"></i>
+                                                        Vender
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </main>
+
+                    {}
+                    {showAuthModal && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up">
+                                <div className="text-center mb-6">
+                                    <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <i data-feather="lock" className="w-8 h-8"></i>
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-gray-800">Acceso Admin</h2>
+                                    <p className="text-gray-500 text-sm mt-1">Ingresa la contraseña para gestionar el inventario.</p>
+                                </div>
+                                
+                                <form onSubmit={handleLogin}>
+                                    <div className="mb-4">
+                                        <input 
+                                            type="password" 
+                                            placeholder="Contraseña..."
+                                            value={passwordInput}
+                                            onChange={(e) => {
+                                                setPasswordInput(e.target.value);
+                                                setAuthError(false);
+                                            }}
+                                            className={`w-full p-4 rounded-xl border-2 text-center text-lg font-bold tracking-widest focus:outline-none transition-colors ${authError ? 'border-red-500 bg-red-50' : 'border-gray-200 focus:border-purple-500'}`}
+                                            autoFocus
+                                        />
+                                        {authError && <p className="text-red-500 text-sm text-center mt-2 font-medium">Contraseña incorrecta</p>}
+                                    </div>
+                                    
+                                    <div className="flex gap-3 mt-6">
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setShowAuthModal(false)}
+                                            className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            type="submit"
+                                            className="flex-1 py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition-colors"
+                                        >
+                                            Entrar
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {}
+                    {toastMessage && (
+                        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+                            <div className={`px-6 py-3 rounded-full shadow-xl flex items-center gap-3 text-white font-medium ${toastMessage.isError ? 'bg-red-500' : 'bg-gray-800'}`}>
+                                <i data-feather={toastMessage.isError ? "alert-circle" : "check-circle"} className="w-5 h-5"></i>
+                                {toastMessage.text}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    
+    <style>
+        /* Animaciones adicionales */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+            animation: fadeInUp 0.3s ease-out forwards;
+        }
+    </style>
+</body>
+</html>
