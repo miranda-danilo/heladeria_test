@@ -331,7 +331,7 @@
                         {isAdmin && (
                             <div className="mb-6 bg-purple-100 text-purple-800 px-4 py-3 rounded-lg flex items-center gap-3 border border-purple-200">
                                 <i data-feather="info" className="w-5 h-5 flex-shrink-0"></i>
-                                <p className="text-sm font-medium">Estás en modo administrador. Usa los botones <span className="font-bold bg-white px-2 rounded mx-1">+</span> y <span className="font-bold bg-white px-2 rounded mx-1">-</span> para corregir o reabastecer el inventario sin que cuente como venta.</p>
+                                <p className="text-sm font-medium">Estás en modo administrador. Usa <strong>"Registrar Venta"</strong> para descontar stock y sumar ganancias, o usa <span className="font-bold bg-white px-2 rounded mx-1">+</span> y <span className="font-bold bg-white px-2 rounded mx-1">-</span> para reabastecer inventario sin afectar las ganancias.</p>
                             </div>
                         )}
 
@@ -348,64 +348,70 @@
                                     
                                     <div className="space-y-4 relative z-10">
                                         {/* Fila Pequeños */}
-                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
-                                            <div>
-                                                <span className="font-bold text-gray-700 block">Pequeño</span>
-                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_SMALL.toFixed(2)}</span>
-                                            </div>
-                                            
-                                            {isAdmin ? (
-                                                <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
-                                                    <button onClick={() => handleAdjustStock(key, 'small', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
-                                                    <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].small}</span>
-                                                    <button onClick={() => handleAdjustStock(key, 'small', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                        <div className={`bg-gray-50 rounded-2xl p-3 flex border border-gray-100 shadow-sm ${isAdmin ? 'flex-col gap-3' : 'justify-between items-center'}`}>
+                                            <div className="flex justify-between items-center w-full">
+                                                <div>
+                                                    <span className="font-bold text-gray-700 block">Pequeño</span>
+                                                    <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_SMALL.toFixed(2)}</span>
                                                 </div>
-                                            ) : (
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-center">
+                                                
+                                                {isAdmin ? (
+                                                    <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                        <button onClick={() => handleAdjustStock(key, 'small', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
+                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].small}</span>
+                                                        <button onClick={() => handleAdjustStock(key, 'small', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
                                                         <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].small}</span>
                                                         <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => handleSell(key, 'small')}
-                                                        disabled={storeState.inventory[key].small <= 0}
-                                                        className={`px-4 py-3 rounded-xl font-bold text-white shadow-md transition-all flex items-center gap-2 ${storeState.inventory[key].small > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
-                                                    >
-                                                        <i data-feather="shopping-bag" className="w-4 h-4"></i>
-                                                        Vender
-                                                    </button>
-                                                </div>
+                                                )}
+                                            </div>
+                                            
+                                            {isAdmin && (
+                                                <button 
+                                                    onClick={() => handleSell(key, 'small')}
+                                                    disabled={storeState.inventory[key].small <= 0}
+                                                    className={`w-full py-2 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center gap-2 ${storeState.inventory[key].small > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                >
+                                                    <i data-feather="shopping-bag" className="w-4 h-4"></i>
+                                                    Registrar Venta
+                                                </button>
                                             )}
                                         </div>
 
                                         {/* Fila Grandes */}
-                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
-                                            <div>
-                                                <span className="font-bold text-gray-700 block">Grande</span>
-                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_LARGE.toFixed(2)}</span>
-                                            </div>
-                                            
-                                            {isAdmin ? (
-                                                <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
-                                                    <button onClick={() => handleAdjustStock(key, 'large', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
-                                                    <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].large}</span>
-                                                    <button onClick={() => handleAdjustStock(key, 'large', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                        <div className={`bg-gray-50 rounded-2xl p-3 flex border border-gray-100 shadow-sm ${isAdmin ? 'flex-col gap-3' : 'justify-between items-center'}`}>
+                                            <div className="flex justify-between items-center w-full">
+                                                <div>
+                                                    <span className="font-bold text-gray-700 block">Grande</span>
+                                                    <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_LARGE.toFixed(2)}</span>
                                                 </div>
-                                            ) : (
-                                                <div className="flex items-center gap-3">
-                                                    <div className="text-center">
+                                                
+                                                {isAdmin ? (
+                                                    <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                        <button onClick={() => handleAdjustStock(key, 'large', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
+                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].large}</span>
+                                                        <button onClick={() => handleAdjustStock(key, 'large', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
                                                         <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].large}</span>
                                                         <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => handleSell(key, 'large')}
-                                                        disabled={storeState.inventory[key].large <= 0}
-                                                        className={`px-4 py-3 rounded-xl font-bold text-white shadow-md transition-all flex items-center gap-2 ${storeState.inventory[key].large > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
-                                                    >
-                                                        <i data-feather="shopping-bag" className="w-4 h-4"></i>
-                                                        Vender
-                                                    </button>
-                                                </div>
+                                                )}
+                                            </div>
+                                            
+                                            {isAdmin && (
+                                                <button 
+                                                    onClick={() => handleSell(key, 'large')}
+                                                    disabled={storeState.inventory[key].large <= 0}
+                                                    className={`w-full py-2 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center gap-2 ${storeState.inventory[key].large > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                >
+                                                    <i data-feather="shopping-bag" className="w-4 h-4"></i>
+                                                    Registrar Venta
+                                                </button>
                                             )}
                                         </div>
                                     </div>
