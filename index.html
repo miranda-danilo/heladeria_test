@@ -62,7 +62,7 @@
                     <ellipse cx="50" cy="45" rx="27" ry="12" fill={mainColor} />
                     <ellipse cx="50" cy="42" rx="24" ry="10" fill={shadowColor} opacity="0.3" />
                     
-                    {/* Detalles según sabor (ej. chispas de Oreo) */}
+                    {/* Detalles según sabor */}
                     {flavorKey === 'oreo' && (
                         <g fill="#374151">
                             <circle cx="35" cy="40" r="1.5" />
@@ -89,23 +89,21 @@
             );
         };
 
-        // Tus credenciales de Supabase
+        // Credenciales de Supabase
         const SUPABASE_URL = 'https://wuegeyaxaernahzpmujc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZWdleWF4YWVybmFoenBtdWpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDgyNjIsImV4cCI6MjEwMjM4NDI2Mn0.Od5QcVZZDz3PzUrEbXKhHiWl9OH4qRvLn4vA5YF914c';
         
         let supabaseClient = null;
         try {
-            // SOLUCIÓN AL ERROR: auth: { persistSession: false } evita que el navegador bloquee Supabase
             supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
                 auth: { persistSession: false }
             });
         } catch (error) {
-            console.error("No se pudo inicializar Supabase. Revisa las credenciales.", error);
+            console.error("No se pudo inicializar Supabase.", error);
         }
 
         const App = () => {
             const [storeState, setStoreState] = useState(null);
-            
             const [isAdmin, setIsAdmin] = useState(false);
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [passwordInput, setPasswordInput] = useState('');
@@ -117,7 +115,6 @@
             const PRICE_SMALL = 0.50;
             const PRICE_LARGE = 0.75;
 
-            // Inicialización de iconos de Feather
             useEffect(() => {
                 if (window.feather) {
                     window.feather.replace();
@@ -126,7 +123,7 @@
 
             useEffect(() => {
                 if (!supabaseClient) {
-                    setToastMessage("Faltan credenciales de Supabase en el código o fueron bloqueadas.");
+                    setToastMessage("Error: Faltan credenciales de Supabase.");
                     setIsSyncing(false);
                     return;
                 }
@@ -141,13 +138,12 @@
                         
                         if (error && error.code !== 'PGRST116') { 
                             console.error("Error fetching data:", error);
-                            return;
                         }
 
-                        if (data) {
+                        if (data && data.data) {
                             setStoreState(data.data);
                         } else {
-                            // Estado inicial según la pizarra si la base de datos está vacía
+                            // Estado inicial basado en la pizarra si la tabla está vacía
                             const defaultState = {
                                 inventory: {
                                     oreo: { small: 9, large: 2 },
@@ -157,29 +153,36 @@
                                 },
                                 sales: { small: 0, large: 0 }
                             };
-                            await supabaseClient.from('store_state').insert([{ id: 1, data: defaultState }]);
+                            await supabaseClient.from('store_state').upsert([{ id: 1, data: defaultState }]);
                             setStoreState(defaultState);
                         }
                         setIsSyncing(false);
                     } catch (e) {
                         console.error("Error conectando a Supabase:", e);
                         setIsSyncing(false);
-                        setToastMessage("Error de conexión a la base de datos");
+                        setToastMessage("Error conectando con la base de datos");
                     }
                 };
 
                 fetchInitialData();
 
-                // Suscripción en tiempo real
-                const subscription = supabaseClient
-                    .channel('public:store_state')
-                    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_state', filter: 'id=eq.1' }, payload => {
-                        setStoreState(payload.new.data);
+                // Suscripción en tiempo real para sincronizar celular y laptop
+                const channel = supabaseClient
+                    .channel('store_state_changes')
+                    .on('postgres_changes', { 
+                        event: '*', 
+                        schema: 'public', 
+                        table: 'store_state', 
+                        filter: 'id=eq.1' 
+                    }, payload => {
+                        if (payload.new && payload.new.data) {
+                            setStoreState(payload.new.data);
+                        }
                     })
                     .subscribe();
 
                 return () => {
-                    supabaseClient.removeChannel(subscription);
+                    supabaseClient.removeChannel(channel);
                 };
             }, []);
 
@@ -191,13 +194,17 @@
             const saveToCloud = async (newState) => {
                 if (!supabaseClient) return;
                 try {
-                    await supabaseClient
+                    const { error } = await supabaseClient
                         .from('store_state')
-                        .update({ data: newState })
-                        .eq('id', 1);
+                        .upsert({ id: 1, data: newState });
+                    
+                    if (error) {
+                        console.error("Error al guardar en Supabase:", error);
+                        showToast("Error al sincronizar con la nube", true);
+                    }
                 } catch (e) {
-                    console.error("Error guardando datos", e);
-                    showToast("Error de conexión a la nube", true);
+                    console.error("Excepción al guardar:", e);
+                    showToast("Error de conexión", true);
                 }
             };
 
@@ -222,16 +229,16 @@
                     }
                 };
 
-                setStoreState(newState); // Actualización optimista local
+                setStoreState(newState); 
                 saveToCloud(newState);
-                showToast(`Vendido: 1 ${FLAVOR_CONFIG[flavorKey].name} ${size === 'small' ? 'Pequeño' : 'Grande'}`);
+                showToast(`Vendido: 1 ${FLAVOR_CONFIG[flavorKey].name} (${size === 'small' ? 'Pequeño' : 'Grande'})`);
             };
 
             const handleAdjustStock = (flavorKey, size, delta) => {
                 if (!storeState) return;
                 
                 const currentAmount = storeState.inventory[flavorKey][size];
-                if (currentAmount + delta < 0) return; // No permitir negativos
+                if (currentAmount + delta < 0) return;
 
                 const newState = {
                     ...storeState,
@@ -255,7 +262,7 @@
                     setShowAuthModal(false);
                     setPasswordInput('');
                     setAuthError(false);
-                    showToast("Modo administrador activado");
+                    showToast("Modo Administrador activado");
                 } else {
                     setAuthError(true);
                 }
@@ -266,7 +273,6 @@
                 showToast("Sesión cerrada");
             };
 
-            // Cálculo de ganancias
             const totalEarnings = storeState ? 
                 (storeState.sales.small * PRICE_SMALL) + (storeState.sales.large * PRICE_LARGE) : 0;
             const totalItemsSold = storeState ? 
@@ -276,7 +282,7 @@
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-purple-50">
                         <div className="w-16 h-16 border-4 border-purple-400 border-t-purple-600 rounded-full animate-spin mb-4"></div>
-                        <h2 className="text-xl font-bold text-purple-800">Conectando a la nube...</h2>
+                        <h2 className="text-xl font-bold text-purple-800">Conectando con la base de datos...</h2>
                     </div>
                 );
             }
@@ -290,7 +296,9 @@
                                 <h1 className="text-2xl font-black tracking-tight" style={{fontFamily: "'Fredoka One', cursive, sans-serif"}}>
                                     HELADOS CREMOSOS
                                 </h1>
-                                <p className="text-purple-200 text-sm opacity-90 font-medium">Sistema de Inventario en la Nube</p>
+                                <p className="text-purple-200 text-sm opacity-90 font-medium">
+                                    {isAdmin ? "Panel de Administración" : "Inventario General"}
+                                </p>
                             </div>
                             <button 
                                 onClick={() => isAdmin ? handleLogout() : setShowAuthModal(true)}
@@ -331,15 +339,14 @@
                         {isAdmin && (
                             <div className="mb-6 bg-purple-100 text-purple-800 px-4 py-3 rounded-lg flex items-center gap-3 border border-purple-200">
                                 <i data-feather="info" className="w-5 h-5 flex-shrink-0"></i>
-                                <p className="text-sm font-medium">Estás en modo administrador. Usa <strong>"Registrar Venta"</strong> para descontar stock y sumar ganancias, o usa <span className="font-bold bg-white px-2 rounded mx-1">+</span> y <span className="font-bold bg-white px-2 rounded mx-1">-</span> para reabastecer inventario sin afectar las ganancias.</p>
+                                <p className="text-sm font-medium">Modo Admin activo. Usa <strong>"Vender"</strong> para descontar stock y sumar ganancias, o usa los botones <span className="font-bold bg-white px-2 rounded mx-1">+</span> y <span className="font-bold bg-white px-2 rounded mx-1">-</span> para reabastecer inventario sin afectar el dinero.</p>
                             </div>
                         )}
 
                         {/* Cuadrícula de Sabores */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {Object.entries(FLAVOR_CONFIG).map(([key, config]) => (
+                            {storeState && Object.entries(FLAVOR_CONFIG).map(([key, config]) => (
                                 <div key={key} className="glass-panel flavor-card rounded-3xl p-6 border border-gray-100 relative overflow-hidden">
-                                    {/* Decoración de fondo */}
                                     <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-20" style={{backgroundColor: config.color}}></div>
                                     
                                     <IceCreamCup flavorKey={key} />
@@ -348,70 +355,62 @@
                                     
                                     <div className="space-y-4 relative z-10">
                                         {/* Fila Pequeños */}
-                                        <div className={`bg-gray-50 rounded-2xl p-3 flex border border-gray-100 shadow-sm ${isAdmin ? 'flex-col gap-3' : 'justify-between items-center'}`}>
-                                            <div className="flex justify-between items-center w-full">
-                                                <div>
-                                                    <span className="font-bold text-gray-700 block">Pequeño</span>
-                                                    <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_SMALL.toFixed(2)}</span>
-                                                </div>
-                                                
-                                                {isAdmin ? (
-                                                    <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
-                                                        <button onClick={() => handleAdjustStock(key, 'small', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
-                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].small}</span>
-                                                        <button onClick={() => handleAdjustStock(key, 'small', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
-                                                        <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].small}</span>
-                                                        <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
-                                                    </div>
-                                                )}
+                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
+                                            <div>
+                                                <span className="font-bold text-gray-700 block">Pequeño</span>
+                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_SMALL.toFixed(2)}</span>
                                             </div>
                                             
-                                            {isAdmin && (
-                                                <button 
-                                                    onClick={() => handleSell(key, 'small')}
-                                                    disabled={storeState.inventory[key].small <= 0}
-                                                    className={`w-full py-2 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center gap-2 ${storeState.inventory[key].small > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
-                                                >
-                                                    <i data-feather="shopping-bag" className="w-4 h-4"></i>
-                                                    Registrar Venta
-                                                </button>
+                                            {isAdmin ? (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                        <button onClick={() => handleAdjustStock(key, 'small', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 font-bold text-lg">-</button>
+                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].small}</span>
+                                                        <button onClick={() => handleAdjustStock(key, 'small', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 font-bold text-lg">+</button>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleSell(key, 'small')}
+                                                        disabled={storeState.inventory[key].small <= 0}
+                                                        className={`px-3 py-2 rounded-xl font-bold text-white text-sm shadow-md transition-all ${storeState.inventory[key].small > 0 ? 'bg-purple-600 hover:bg-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                    >
+                                                        Vender
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
+                                                    <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].small}</span>
+                                                    <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
+                                                </div>
                                             )}
                                         </div>
 
                                         {/* Fila Grandes */}
-                                        <div className={`bg-gray-50 rounded-2xl p-3 flex border border-gray-100 shadow-sm ${isAdmin ? 'flex-col gap-3' : 'justify-between items-center'}`}>
-                                            <div className="flex justify-between items-center w-full">
-                                                <div>
-                                                    <span className="font-bold text-gray-700 block">Grande</span>
-                                                    <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_LARGE.toFixed(2)}</span>
-                                                </div>
-                                                
-                                                {isAdmin ? (
-                                                    <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
-                                                        <button onClick={() => handleAdjustStock(key, 'large', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-bold text-lg">-</button>
-                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].large}</span>
-                                                        <button onClick={() => handleAdjustStock(key, 'large', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-200 font-bold text-lg">+</button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
-                                                        <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].large}</span>
-                                                        <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
-                                                    </div>
-                                                )}
+                                        <div className="bg-gray-50 rounded-2xl p-3 flex justify-between items-center border border-gray-100 shadow-sm">
+                                            <div>
+                                                <span className="font-bold text-gray-700 block">Grande</span>
+                                                <span className="text-sm text-purple-600 font-bold bg-purple-100 px-2 py-0.5 rounded-full">${PRICE_LARGE.toFixed(2)}</span>
                                             </div>
                                             
-                                            {isAdmin && (
-                                                <button 
-                                                    onClick={() => handleSell(key, 'large')}
-                                                    disabled={storeState.inventory[key].large <= 0}
-                                                    className={`w-full py-2 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center gap-2 ${storeState.inventory[key].large > 0 ? 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
-                                                >
-                                                    <i data-feather="shopping-bag" className="w-4 h-4"></i>
-                                                    Registrar Venta
-                                                </button>
+                                            {isAdmin ? (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-xl shadow-inner border border-gray-200">
+                                                        <button onClick={() => handleAdjustStock(key, 'large', -1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 text-red-600 font-bold text-lg">-</button>
+                                                        <span className="w-6 text-center font-bold text-xl">{storeState.inventory[key].large}</span>
+                                                        <button onClick={() => handleAdjustStock(key, 'large', 1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-100 text-green-600 font-bold text-lg">+</button>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleSell(key, 'large')}
+                                                        disabled={storeState.inventory[key].large <= 0}
+                                                        className={`px-3 py-2 rounded-xl font-bold text-white text-sm shadow-md transition-all ${storeState.inventory[key].large > 0 ? 'bg-purple-600 hover:bg-purple-700 active:scale-95' : 'bg-gray-300 cursor-not-allowed'}`}
+                                                    >
+                                                        Vender
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
+                                                    <span className="block text-2xl font-black text-gray-800 leading-none">{storeState.inventory[key].large}</span>
+                                                    <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Stock</span>
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -420,7 +419,7 @@
                         </div>
                     </main>
 
-                    {}
+                    {/* Modal de Contraseña */}
                     {showAuthModal && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up">
@@ -468,7 +467,7 @@
                         </div>
                     )}
 
-                    {}
+                    {/* Notificaciones Toast */}
                     {toastMessage && (
                         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
                             <div className={`px-6 py-3 rounded-full shadow-xl flex items-center gap-3 text-white font-medium ${toastMessage.isError ? 'bg-red-500' : 'bg-gray-800'}`}>
@@ -486,7 +485,6 @@
     </script>
     
     <style>
-        /* Animaciones adicionales */
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
