@@ -208,16 +208,25 @@
             };
 
             const handleManualSave = async () => {
-                if (!supabase || !storeState) return;
+                if (!supabase || !storeState) {
+                    showToast("No hay conexión con Supabase", true);
+                    return;
+                }
                 try {
-                    const { error } = await supabase
+                    console.log("Enviando estado a Supabase...", storeState);
+                    const { data, error } = await supabase
                         .from('store_state')
-                        .upsert({ id: 1, data: storeState });
+                        .upsert([{ id: 1, data: storeState }]);
                     
-                    if (error) throw error;
-                    showToast("¡Datos guardados y actualizados en Supabase!");
+                    if (error) {
+                        console.error("Error devuelto por Supabase:", error);
+                        showToast("Error de Supabase: " + error.message, true);
+                    } else {
+                        console.log("Guardado con éxito en Supabase:", data);
+                        showToast("¡Datos guardados y actualizados en Supabase!");
+                    }
                 } catch (e) {
-                    console.error("Error al guardar:", e);
+                    console.error("Excepción al guardar:", e);
                     showToast("Error al guardar en Supabase", true);
                 }
             };
