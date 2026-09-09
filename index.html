@@ -376,6 +376,48 @@
                 showToast(`Inventario ajustado (${delta > 0 ? '+' : ''}${delta}) — recuerda tocar "Guardar en la Nube"`);
             };
 
+            const handleResetInventory = async () => {
+                const confirmReset = window.confirm(
+                    "¿Seguro que quieres reiniciar TODO?\n\nEsto va a:\n- Restaurar el inventario a los valores originales\n- Poner las ganancias y helados vendidos en $0 / 0 unidades\n\nEsta acción no se puede deshacer."
+                );
+                if (!confirmReset) return;
+
+                const resetState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+                setStoreState(resetState);
+
+                const client = supabaseRef.current;
+                if (!client || dbStatus !== 'connected') {
+                    setHasUnsavedChanges(true);
+                    showToast('Inventario reiniciado localmente — recuerda tocar "Guardar en la Nube" cuando haya conexión', true);
+                    return;
+                }
+
+                setIsSaving(true);
+                try {
+                    const { data, error } = await client
+                        .from('store_state')
+                        .upsert({ id: 1, data: resetState })
+                        .select();
+
+                    if (error) throw error;
+
+                    if (!data || data.length === 0) {
+                        setHasUnsavedChanges(true);
+                        showToast('Se reinició localmente, pero Supabase no confirmó el guardado. Revisa los permisos.', true);
+                        return;
+                    }
+
+                    setHasUnsavedChanges(false);
+                    showToast('Inventario y ganancias reiniciados correctamente');
+                } catch (e) {
+                    console.error('Error al reiniciar en Supabase:', e);
+                    setHasUnsavedChanges(true);
+                    showToast(`Se reinició localmente, pero falló el guardado en Supabase: ${e.message || 'ver consola'}`, true);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
             const handleLogin = (e) => {
                 e.preventDefault();
                 if (passwordInput === 'helado2026') {
@@ -485,16 +527,29 @@
                                         </h3>
                                         <p className="text-xs text-purple-600">Guarda tus ventas y cambios manualmente en Supabase.</p>
                                     </div>
-                                    <button
-                                        onClick={handleManualSave}
-                                        disabled={isSaving || dbStatus !== 'connected'}
-                                        className={`px-5 py-2.5 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 ${
-                                            (isSaving || dbStatus !== 'connected') ? 'bg-gray-400 cursor-not-allowed' : hasUnsavedChanges ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'
-                                        }`}
-                                    >
-                                        <i data-feather={isSaving ? "loader" : "cloud"} className="w-4 h-4"></i>
-                                        {isSaving ? 'Guardando...' : 'Guardar en la Nube'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleResetInventory}
+                                            disabled={isSaving}
+                                            title="Reiniciar inventario y ganancias al estado original"
+                                            className={`px-4 py-2.5 font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 border ${
+                                                isSaving ? 'bg-gray-200 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                                            }`}
+                                        >
+                                            <i data-feather="refresh-ccw" className="w-4 h-4"></i>
+                                            Reiniciar Todo
+                                        </button>
+                                        <button
+                                            onClick={handleManualSave}
+                                            disabled={isSaving || dbStatus !== 'connected'}
+                                            className={`px-5 py-2.5 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 ${
+                                                (isSaving || dbStatus !== 'connected') ? 'bg-gray-400 cursor-not-allowed' : hasUnsavedChanges ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'
+                                            }`}
+                                        >
+                                            <i data-feather={isSaving ? "loader" : "cloud"} className="w-4 h-4"></i>
+                                            {isSaving ? 'Guardando...' : 'Guardar en la Nube'}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
